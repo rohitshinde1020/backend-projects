@@ -4,6 +4,13 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const transporter = require('../config/nodemailer');
 
+const cookieOptions = {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    maxAge: 24 * 60 * 60 * 1000,
+};
+
 const register = async (req, res) => {
     const { name, email, password } = req.body;
 
@@ -31,12 +38,7 @@ const register = async (req, res) => {
             { expiresIn: '1d' },
         )
 
-        res.cookie('token', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 24 * 60 * 60 * 1000,
-        })
+        res.cookie('token', token, cookieOptions)
 
         const option = {
             from: process.env.SENDER,
@@ -83,12 +85,7 @@ const login = async (req, res) => {
             { expiresIn: '1d' },
         )
 
-        res.cookie('token', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
-            maxAge: 24 * 60 * 60 * 1000,
-        })
+        res.cookie('token', token, cookieOptions)
 
         res.status(200).json({ success: true, message: "Login successful" });
 
@@ -105,7 +102,7 @@ const logout = async (req, res) => {
         res.clearCookie('token', {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         })
         res.status(200).json({ success: true, message: "logout successfull" })
     }
@@ -254,7 +251,7 @@ const verifyresetotp = async (req, res) => {
 const authmiddleware = (req, res, next) => {
     const token = req.cookies.token;
     if (!token) {
-        return res.status(400).json({ success: false, message: "Unauthorized access" });
+        return res.status(401).json({ success: false, message: "Unauthorized access" });
     }
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -263,7 +260,7 @@ const authmiddleware = (req, res, next) => {
 
     }
     catch (err) {
-        res.status(400).json({ success: false, message: "Unauthorized access" });
+        res.status(401).json({ success: false, message: "Unauthorized access" });
     }
 
 }

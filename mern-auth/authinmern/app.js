@@ -10,8 +10,11 @@ const router=require("./routers/main-router.js");
 const userrouter=require("./routers/user-router.js");
 
 const allowedOrigins = [
-  "https://authentication-system-yoa2.onrender.com"
-];
+  "https://authentication-system-yoa2.onrender.com",
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  process.env.CLIENT_URL
+].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
