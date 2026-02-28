@@ -9,6 +9,7 @@ router.post('/logout',logout);
 router.post('/verify-otp',authmiddleware, verify_otp_sent);
 router.post('/verifyaccount',authmiddleware, verifyemail);
 router.post('/resetpassword', resetpassword);
+router.post('/reset-password', resetpassword);
 router.post('/verify-reset-otp', verifyresetotp);
 router.get('/isauthenticated',authmiddleware, isauthenticated);
 

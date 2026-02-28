@@ -12,7 +12,8 @@ const cookieOptions = {
 };
 
 const register = async (req, res) => {
-    const { name, email, password } = req.body;
+    const { name, password } = req.body;
+    const email = req.body.email?.trim()?.toLowerCase();
 
     if (!name || !email || !password) {
         return res.status(400).json({ success: false, message: "All fields are required" });
@@ -63,7 +64,8 @@ const register = async (req, res) => {
 
 const login = async (req, res) => {
     console.log("Login route hit");
-    const { email, password } = req.body;
+    const { password } = req.body;
+    const email = req.body.email?.trim()?.toLowerCase();
 
     if (!email || !password) {
         return res.status(400).json({ success: false, message: "All fields are required" });
@@ -187,7 +189,13 @@ const verifyemail = async (req, res) => {
 }
 
 const resetpassword = async (req, res) => {
-    const email = req.body.email;
+    const email = req.body.email?.trim()?.toLowerCase();
+    if (!email) {
+        return res.status(400).json({ success: false, message: "Email is required" });
+    }
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD || !process.env.SENDER) {
+        return res.status(500).json({ success: false, message: "Email service is not configured" });
+    }
     try {
         const user = await User.findOne({ email });
         if(!user || user === null){
@@ -207,11 +215,20 @@ const resetpassword = async (req, res) => {
             text: `Your OTP for password reset is ${otp}. Use this OTP to reset your password.`
         };
 
-        await transporter.sendMail(options);
+        try {
+            await transporter.sendMail(options);
+        } catch (mailErr) {
+            user.resetOTP = "";
+            user.resetotpexpiry = 0;
+            await user.save();
+            console.error("resetpassword mail error:", mailErr.message);
+            return res.status(502).json({ success: false, message: "Failed to send reset OTP email" });
+        }
 
         res.status(200).json({ success: true, message: "Password reset OTP sent to your email", userId: user._id });
     }
     catch (err) {
+        console.error("resetpassword error:", err.message);
         res.status(500).json({ success: false, message: "Operation failed" });
     }
 }
@@ -227,12 +244,18 @@ const verifyresetotp = async (req, res) => {
         if (!user || user === null) {
             return res.status(400).json({ success: false, message: "User not found" });
         }
+        if (!/^\d{6}$/.test(String(otp))) {
+            return res.status(400).json({ success: false, message: "Invalid OTP format" });
+        }
         if (String(user.resetOTP) !== String(otp) || Date.now() > user.resetotpexpiry) {
             return res.status(400).json({ success: false, message: "Either OTP is wrong or has expired" });
         }
 
         if (!newpassword) {
             return res.status(200).json({ success: true, message: "OTP verified successfully" });
+        }
+        if (String(newpassword).length < 6) {
+            return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
         }
 
         const gensalt = await bcrypt.genSalt(10);
@@ -244,6 +267,7 @@ const verifyresetotp = async (req, res) => {
         res.status(200).json({ success: true, message: "Password reset successful" });
     }
     catch (err) {
+        console.error("verifyresetotp error:", err.message);
         res.status(500).json({ success: false, message: "Password reset failed" });
     }
 }
