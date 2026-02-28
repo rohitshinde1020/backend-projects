@@ -190,9 +190,9 @@ const verifyemail = async (req, res) => {
 }
 
 const resetpassword = async (req, res) => {
-    const userId = req.body.userId;
+    const email = req.body.email;
     try {
-        const user = await User.findById(userId);
+        const user = await User.findOne({ email });
         if(!user || user === null){
             return res.status(400).json({ success: false, message: "User not found" });
         }
@@ -212,7 +212,7 @@ const resetpassword = async (req, res) => {
 
         await transporter.sendMail(options);
 
-        res.status(200).json({ success: true, message: "Password reset OTP sent to your email" });
+        res.status(200).json({ success: true, message: "Password reset OTP sent to your email", userId: user._id });
     }
     catch (err) {
         res.status(500).json({ success: false, message: "Operation failed" });
@@ -221,8 +221,8 @@ const resetpassword = async (req, res) => {
 
 const verifyresetotp = async (req, res) => {
     const { userId, otp, newpassword } = req.body;
-    if (!userId || !otp || !newpassword) {
-        return res.status(400).json({ success: false, message: "All fields are required" });
+    if (!userId || !otp) {
+        return res.status(400).json({ success: false, message: "User and OTP are required" });
     }
     try {
         const user = await User.findById(userId);
@@ -233,6 +233,11 @@ const verifyresetotp = async (req, res) => {
         if (String(user.resetOTP) !== String(otp) || Date.now() > user.resetotpexpiry) {
             return res.status(400).json({ success: false, message: "Either OTP is wrong or has expired" });
         }
+
+        if (!newpassword) {
+            return res.status(200).json({ success: true, message: "OTP verified successfully" });
+        }
+
         const gensalt = await bcrypt.genSalt(10);
         const hashpassword = await bcrypt.hash(newpassword, gensalt);
         user.password = hashpassword;

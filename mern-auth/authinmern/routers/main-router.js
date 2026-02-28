@@ -8,8 +8,8 @@ router.post('/login', login);
 router.post('/logout',logout);
 router.post('/verify-otp',authmiddleware, verify_otp_sent);
 router.post('/verifyaccount',authmiddleware, verifyemail);
-router.post('/resetpassword',authmiddleware, resetpassword);
-router.post('/verify-reset-otp',authmiddleware,verifyresetotp);
+router.post('/resetpassword', resetpassword);
+router.post('/verify-reset-otp', verifyresetotp);
 router.get('/isauthenticated',authmiddleware, isauthenticated);
 
 module.exports = router;

@@ -57,7 +57,6 @@ const Navbar = () => {
                     <div className='flex items-center gap-3 group cursor-pointer'>
                         <div className='relative'>
                             <div className='absolute -inset-1 bg-linear-to-r from-purple-600 to-pink-600 rounded-lg blur opacity-25 group-hover:opacity-75 transition duration-300'></div>
-
                         </div>
                         <h1 className="text-xl md:text-2xl font-bold bg-linear-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
                             Mern-Auth
