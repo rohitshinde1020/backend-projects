@@ -8,12 +8,12 @@ export const Appcontext = createContext();
 
 export function Contextprovider({ children }) {
     const serverurl = import.meta.env.VITE_SERVER_URL;
+    axios.defaults.withCredentials = true;
     const [isloggedin, setIsloggedin] = useState(false);
     const [userdata, setUserdata] = useState(null);
 
     const getuserdata = async () => {
         try {
-            axios.defaults.withCredentials = true;
             const { data } = await axios.get(`${serverurl}/api/user/data`)
             if (data.success) {
                 setUserdata(data.data);
@@ -21,6 +21,12 @@ export function Contextprovider({ children }) {
                 toast.error(data.message);
             }
         } catch (err) {
+            const status = err.response?.status;
+            if (status === 400 || status === 401) {
+                setIsloggedin(false);
+                setUserdata(null);
+                return;
+            }
             toast.error(err.response?.data?.message || "Failed to fetch user data");
         }
     }
@@ -35,10 +41,16 @@ export function Contextprovider({ children }) {
             }
             else {
                 setIsloggedin(false);
+                setUserdata(null);
             }
         }
         catch (err) {
-            toast.error(err.message || "Failed to fetch auth status");
+            const status = err.response?.status;
+            setIsloggedin(false);
+            setUserdata(null);
+            if (status !== 400 && status !== 401) {
+                toast.error(err.response?.data?.message || err.message || "Failed to fetch auth status");
+            }
         }
     }
 
