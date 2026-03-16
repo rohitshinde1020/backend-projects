@@ -1,4 +1,5 @@
 const axios = require("axios");
+const mongoose = require("mongoose");
 const openai = require("../config/opeai.js");
 const imagekitinstance = require("../config/imagekit.js");
 const User = require("../models/usermodel.js");
@@ -8,10 +9,11 @@ const Chat = require("../models/chat.js");
 const textmessagecontroller = async (req, res) => {
     try {
         const userId = req.user._id;
-        const { chatId, prompt } = req.body;
+        const { chatId } = req.body;
+        const prompt = req.body.prompt?.trim();
         
-        if(req.user.credits<1){
-            return res.status(400).json({ success: false, message: "Not enough credits to generate image" });
+        if (!chatId || !mongoose.Types.ObjectId.isValid(chatId)) {
+            return res.status(400).json({ success: false, message: "Valid chatId is required" });
         }
 
         if (!prompt) {
@@ -22,7 +24,7 @@ const textmessagecontroller = async (req, res) => {
             return res.status(400).json({ success: false, message: "Not enough credits to generate content" });
         }
 
-        const chat = await Chat.findOne({ userId, _id: chatId });
+        const chat = await Chat.findOne({ userId: String(userId), _id: chatId });
         if (!chat) {
             return res.status(404).json({ success: false, message: "Chat not found" });
         }
@@ -37,7 +39,7 @@ const textmessagecontroller = async (req, res) => {
 
 
         const { choices } = await openai.chat.completions.create({
-            model: "gemini-3-flash-preview",
+            model: "gemini-2.5-flash",
             messages: [
                 {
                     role: "user",
@@ -46,24 +48,49 @@ const textmessagecontroller = async (req, res) => {
             ],
         });
 
+        const providerMessage = choices?.[0]?.message;
+        const replyContent = Array.isArray(providerMessage?.content)
+            ? providerMessage.content
+                .map((part) => typeof part === "string" ? part : part?.text || "")
+                .join("\n")
+                .trim()
+            : providerMessage?.content;
+
+        if (!replyContent) {
+            throw new Error("AI provider returned an empty response");
+        }
+
         const reply = {
-            ...choices[0].message,
+            role: "assistant",
+            content: replyContent,
             timestamp: Date.now(),
             isImage: false,
             ispublished: false,
-            role: "assistant",
         };
-        res.status(200).json({ success: true, message: "Message processed successfully", reply });
+
         chat.messages.push(reply);
         await chat.save();
 
-        await User.updateOne({_id:userId},{$inc:{credits:-1}});
+        await User.updateOne({ _id: userId }, { $inc: { credits: -1 } });
+
+        res.status(200).json({ success: true, message: "Message processed successfully", reply });
 
         
 
     }
     catch (err) {
-        res.status(500).json({ success: false, message: "Error processing message", error: err.message });
+        const statusCode = err.name === "CastError" ? 400 : err.status || 500;
+        let message = err.message || "Error processing message";
+
+        if (statusCode === 400) {
+            message = "Invalid chatId";
+        }
+
+        if (statusCode === 429) {
+            message = "AI provider rate limit or quota exceeded. Please try again later or check your Gemini API quota.";
+        }
+
+        res.status(statusCode).json({ success: false, message, error: err.message });
     }
 }
 
@@ -88,8 +115,9 @@ const textmessagecontroller = async (req, res) => {
 const imagemessagecontroller = async (req, res) => {
     try {
         const userId = req.user._id;
-        const { chatId, ispublished } = req.body;
+        const { chatId, ispublished, ispublish } = req.body;
         const prompt = req.body.prompt;
+        const shouldPublish = typeof ispublished === "boolean" ? ispublished : Boolean(ispublish);
 
         if (!prompt) {
             return res.status(400).json({ success: false, message: "Prompt is required" });
@@ -137,7 +165,7 @@ const imagemessagecontroller = async (req, res) => {
             content: uploadresponse.url,
             timestamp: Date.now(),
             isImage: true,
-            ispublished: Boolean(ispublished),
+            ispublished: shouldPublish,
         };
 
         res.status(200).json({ success: true, message: "Image generated and uploaded successfully", reply });
@@ -149,7 +177,18 @@ const imagemessagecontroller = async (req, res) => {
 
     }
     catch (err) {
-        res.status(500).json({ success: false, message: "Error processing message", error: err.message });
+        const statusCode = err.name === "CastError" ? 400 : err.status || 500;
+        let message = err.message || "Error processing message";
+
+        if (statusCode === 400) {
+            message = "Invalid chatId";
+        }
+
+        if (statusCode === 429) {
+            message = "AI provider rate limit or quota exceeded. Please try again later or check your ImageKit or Gemini API quota.";
+        }
+
+        res.status(statusCode).json({ success: false, message, error: err.message });
     }  
 }
 

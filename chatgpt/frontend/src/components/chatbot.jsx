@@ -5,10 +5,13 @@ import { assets } from '../assets/assets'
 import Message from './message'
 import { useRef } from 'react'
 import { useLayoutEffect } from 'react'
+import toast from 'react-hot-toast'
 
 const Chatbot = () => {
   const containerRef = useRef(null);
-  const { user, theme, selectedchat } = useContext(Appcontext);
+
+
+  const { user, theme, selectedchat, setselectedchat, setchat, axios, token } = useContext(Appcontext);
   const [messages, setmessages] = useState([]);
   const [loading, setloading] = useState(false);
   const prevMessageCount = useRef(0);
@@ -23,16 +26,99 @@ const Chatbot = () => {
     }
   };
 
-  const onsubmit = (e) => {
-    e.preventDefault();
-    if (prompt.trim() === '') return;
+  const syncChatInList = (chatId, updater) => {
+    setchat((prev) => prev.map((item) => {
+      if (item._id !== chatId) {
+        return item;
+      }
 
+      return updater(item);
+    }));
+  };
+
+  const onsubmit = async (e) => {
+    e.preventDefault();
+
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt) {
+      return;
+    }
+
+    if (!user) {
+      toast.error('Please login to send a message');
+      return;
+    }
+
+    if (!selectedchat?._id) {
+      toast.error('Please create or select a chat first');
+      return;
+    }
+
+    const userMessage = {
+      content: trimmedPrompt,
+      role: 'user',
+      timestamp: Date.now(),
+      isImage: false,
+      ispublished: false,
+    };
+
+    try {
+      setloading(true);
+      setprompt('');
+      setmessages((prev) => [...prev, userMessage]);
+      setselectedchat((prev) => prev ? { ...prev, messages: [...prev.messages, userMessage] } : prev);
+      syncChatInList(selectedchat._id, (item) => ({
+        ...item,
+        messages: [...item.messages, userMessage],
+        updatedAt: new Date().toISOString(),
+      }));
+
+      const { data } = await axios.post(
+        `/api/message/${mode}`,
+        { prompt: trimmedPrompt, chatId: selectedchat._id, ispublished: ispublish },
+        { headers: { Authorization: token } }
+      );
+
+      if (!data.success) {
+        throw new Error(data.message || 'Error submitting message');
+      }
+
+      setmessages((prev) => [...prev, data.reply]);
+      setselectedchat((prev) => prev ? { ...prev, messages: [...prev.messages, data.reply] } : prev);
+      syncChatInList(selectedchat._id, (item) => ({
+        ...item,
+        messages: [...item.messages, data.reply],
+        updatedAt: new Date().toISOString(),
+      }));
+    }
+    catch (error) {
+      setprompt(trimmedPrompt);
+      setmessages((prev) => prev.filter((message) => message.timestamp !== userMessage.timestamp));
+      setselectedchat((prev) => prev ? {
+        ...prev,
+        messages: prev.messages.filter((message) => message.timestamp !== userMessage.timestamp),
+      } : prev);
+      syncChatInList(selectedchat._id, (item) => ({
+        ...item,
+        messages: item.messages.filter((message) => message.timestamp !== userMessage.timestamp),
+      }));
+      toast.error(error.response?.data?.message || error.message || 'Error submitting message');
+    }
+    finally {
+      setloading(false);
+    }
   }
 
   useEffect(() => {
     if (selectedchat) {
       setmessages(selectedchat.messages);
       prevMessageCount.current = selectedchat.messages.length;
+    }
+  }, [selectedchat]);
+  // clear messages when no chat is selected (e.g. last chat deleted)
+  useEffect(() => {
+    if (!selectedchat) {
+      setmessages([]);
     }
   }, [selectedchat]);
 
@@ -91,7 +177,7 @@ const Chatbot = () => {
             )
           }
 
-          {mode === 'Image' && (
+          {mode === 'image' && (
             <label htmlFor="" className='inline-flex items-center gap-2 mt-3 text-sm text-gray-500 dark:text-gray-400 cursor-pointer'>
               <p className='text-xs'>Publish Generated Image to Community</p>
               <input type="checkbox"
@@ -111,7 +197,7 @@ const Chatbot = () => {
               <select onChange={(e) => setmode(e.target.value)} value={mode}
                 className='bg-transparent text-xs font-semibold uppercase tracking-wide text-slate-700 outline-none dark:text-slate-200'>
                 <option className='dark:bg-slate-900' value="text">Text</option>
-                <option className='dark:bg-slate-900' value="Image">Image</option>
+                <option className='dark:bg-slate-900' value="image">Image</option>
               </select>
             </div>
             <input type="text" value={prompt} onChange={(e) => setprompt(e.target.value)}

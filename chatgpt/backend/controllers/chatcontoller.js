@@ -4,14 +4,14 @@ const createchat = async (req, res) => {
     
     try {
         const userId = req.user._id;
-        await Chat.create({
+        const newChat = await Chat.create({
             userId,
             messages: [],
             name:'new chat',
             userName:req.user.name
         });
         
-        res.status(201).json({ success: true, message: "Chat created successfully" });
+        res.status(201).json({ success: true, message: "Chat created successfully", chat: newChat });
         
     } catch (error) {
         res.status(500).json({ success: false, message: "Error processing message", error: error.message });

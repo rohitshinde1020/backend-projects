@@ -1,11 +1,12 @@
 import React, { useContext, useState } from 'react'
 import { Appcontext } from '../context/Appcontext'
 import { assets } from '../assets/assets'
-import moment from 'moment/moment'
+import moment from 'moment'
+import toast from "react-hot-toast";
 
 
 const Sidebar = ({ openmenu, setopenmenu }) => {
-  const { user, theme, chat, setselectedchat, setchat, settheme, fetchuser, navigate } = useContext(Appcontext);
+  const { user, theme, chat, setselectedchat, setchat, settheme, fetchuser, navigate, axios, createnewchat, logout, deletechat } = useContext(Appcontext);
   const [search, setsearch] = useState('');
 
   return (
@@ -14,7 +15,8 @@ const Sidebar = ({ openmenu, setopenmenu }) => {
       <img src={theme === 'dark' ? assets.logo_full : assets.logo_full_dark} alt=""
         className='w-full max-w-48' />
 
-      <button className='mt-5 hover:scale-95'>
+    {/* create new chat  */}
+      <button className='mt-5 hover:scale-95' onClick={createnewchat}>
         <div className='flex items-center justify-center gap-3 text-white px-4 py-2 rounded-lg bg-gradient-to-r 
         from-pink-400 to-purple-400 transition-colors duration-300'>
           <small className='text-2xl font-bold'>+</small>
@@ -22,18 +24,21 @@ const Sidebar = ({ openmenu, setopenmenu }) => {
         </div>
       </button>
 
+      {/* search for the chat */}
       <div className='flex items-center gap-2 mt-5 p-3 rounded-xl bg-white/70 ring-1 ring-gray-200 dark:bg-slate-800/70 dark:ring-gray-700'>
         <img src={assets.search_icon} alt="Search" className='w-5 h-5 not-dark:invert' />
         <input type="text" placeholder='Search Conversation' value={search} onChange={(e) => setsearch(e.target.value)}
           className='w-full bg-transparent outline-none text-sm placeholder:text-gray-400' />
       </div>
 
+      {/* all chats list  */}
       {chat.length > 0 && <p className='text-sm text-gray-500  mt-3'>Recent Chats</p>}
-      <div className='flex flex-col gap-2 overflow-y-auto mt-2'>
+      <div className='flex flex-col gap-2 overflow-y-auto mt-2 overflow-scrollbar-hide h-65'>
         {
-          chat.filter((item) => item.messages?.[0]
+          
+          chat.filter((item) => item && (item.messages?.[0]
             ? item.messages[0].content.toLowerCase().includes(search.toLowerCase())
-            : item.name.toLowerCase().includes(search.toLowerCase()))
+            : item.name?.toLowerCase().includes(search.toLowerCase())))
             .map((item) => (
 
               <div onClick={() => { navigate('/'); setselectedchat(item); setopenmenu(false) }}
@@ -50,8 +55,8 @@ const Sidebar = ({ openmenu, setopenmenu }) => {
                     </p>
                   </div>
                   <div>
-                    <img src={assets.bin_icon} alt="" className='hidden group-hover:block w-5 cursor-pointer not-dark:invert' />
-
+                    <img src={assets.bin_icon} alt="" className='hidden group-hover:block w-5 cursor-pointer not-dark:invert'
+                      onClick={(e)=>{ e.stopPropagation(); deletechat(item._id); }} />
                   </div>
                 </div>
 
@@ -62,7 +67,7 @@ const Sidebar = ({ openmenu, setopenmenu }) => {
       </div>
 
       <div className=' w-full' onClick={() => { navigate('/community'); setopenmenu(false) }}>
-        <button className='mt-5 w-full px-4 py-2 rounded-lg hover:scale-95 bg-gradient-to-r from-pink-400 to-purple-400 text-white transition-colors duration-300' onClick={() => navigate('/community')}>
+        <button className='mt-5 w-full px-4 py-2 rounded-lg hover:scale-95 bg-gradient-to-r from-pink-400 to-purple-400 text-white transition-colors duration-300'>
           community images
         </button>
       </div>
@@ -75,7 +80,7 @@ const Sidebar = ({ openmenu, setopenmenu }) => {
         </div>
       </div>
 
-      <div className='w-full' onClick={() => { navigate('/'); setopenmenu(false) }}>
+      <div className='w-full' onClick={() => {setopenmenu(false) }}>
         <button className='mt-3 w-full px-4 py-2 rounded-lg hover:scale-95 bg-gradient-to-r from-pink-400 to-purple-400 text-white transition-colors duration-300' onClick={() => settheme(theme === 'dark' ? 'light' : 'dark')}>
           Toggle Theme
         </button>
@@ -85,13 +90,7 @@ const Sidebar = ({ openmenu, setopenmenu }) => {
         dark:bg-slate-800/70 dark:ring-gray-700'>
         <img src={assets.user_icon} className='w-5 rounded-full dark:invert' alt="" />
         <p className='flex-1 text-xs dark:text-primary truncate '>{user ? user.name : 'login your account'}</p>
-        {user && <img src={assets.logout_icon} alt="" className='w-4 cursor-pointer not-dark:invert' onClick={() => {
-          setchat([]);
-          setselectedchat(null);
-          fetchuser();
-        }} />}
-
-
+        {user && <img src={assets.logout_icon} alt="" className='w-4 cursor-pointer not-dark:invert' onClick={logout} />}
       </div>
 
       <img onClick={() => setopenmenu(false)} src={assets.close_icon} className='absolute top-3 right-3 w-5 h-5 md:hidden not-dark:invert cursor-pointer' alt="" />

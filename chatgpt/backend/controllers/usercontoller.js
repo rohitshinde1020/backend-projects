@@ -41,7 +41,16 @@ const registeruser = async (req, res) => {
 
 
         await newUser.save();
-        res.status(201).json({ success: true, message: "User registered successfull" });
+        res.status(201).json({
+            success: true,
+            message: "User registered successfull",
+            token,
+            user: {
+                _id: newUser._id,
+                name: newUser.name,
+                email: newUser.email,
+            },
+        });
     } catch (error) {
         res.status(500).json({ success: false, message: "Error registering user", error: error.message });
     }
@@ -78,7 +87,16 @@ const login = async (req, res) => {
             maxAge: 24 * 60 * 60 * 1000,
         })
 
-        res.status(201).json({ success: true, message: "User logged in successfully" });
+        res.status(201).json({
+            success: true,
+            message: "User logged in successfully",
+            token,
+            user: {
+                _id: foundUser._id,
+                name: foundUser.name,
+                email: foundUser.email,
+            },
+        });
     }
     catch (error) {
         res.status(500).json({ success: false, message: "Error logging in", error: error.message });

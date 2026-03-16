@@ -1,22 +1,35 @@
-import React from 'react'
+import React, { useContext } from 'react'
 import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { dummyPublishedImages } from '../assets/assets';
+import { Appcontext } from '../context/Appcontext';
+import toast from 'react-hot-toast'
 
 const Community = () => {
     const [images, setimages] = React.useState([]);
     const [loading, setloading] = React.useState(true);
-    const navigate = useNavigate();
+    const {axios}=useContext(Appcontext);
     const fetchimages = async () => {
         try {
 
-            setimages(dummyPublishedImages);
-            setloading(false);
+            const {data}=await axios.get('/api/user/published'); 
+            if(data.success){
+                const normalizedImages = (data.images || []).map((item) => ({
+                    ...item,
+                    imageUrl: item.imageUrl || item.imageurl,
+                }));
+                setimages(normalizedImages);
+            }
+            else{
+                toast.error(data.message);
+            }
+
         }
         catch (error) {
-            console.error('Error fetching images:', error);
+            toast.error(error.message || "Error fetching community images");
+        }
+        finally {
             setloading(false);
         }
+        
     }
 
     useEffect(() => {

@@ -27,5 +27,7 @@ app.use('/api/chat',chatrouter);
 app.use('/api/message',messagerouter);
 app.use('/api/credits',creditrouter );
 
-module.exports=app;
+module.exports=app.listen(port,()=>{
+    console.log(`server is running on port ${port}`);
+})
 
