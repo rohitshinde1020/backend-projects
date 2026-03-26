@@ -1,13 +1,57 @@
 import React, { useEffect, useState } from 'react'
-import { dummyPlans } from '../assets/assets';
+import { useContext } from 'react';
+import { Appcontext } from '../context/Appcontext';
+import toast from 'react-hot-toast';
 import Loading from '../pages/loading';
 
 const Credits = () => {
   const [plans, setplans] = React.useState([]);
   const [loading, setloading] = useState(false);
+  const [buyingPlanId, setbuyingPlanId] = useState(null);
+  const { axios, token, navigate } = useContext(Appcontext);
 
   const fetchplans = async () => {
-    setplans(dummyPlans);
+    setloading(true);
+    try {
+      const { data } = await axios.get('/api/credits/plans');
+      if (data.success) {
+        setplans(data.plans || []);
+      } else {
+        toast.error(data.message || 'Could not load plans');
+      }
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Error fetching plans');
+    } finally {
+      setloading(false);
+    }
+  }
+
+  const purchasePlan = async (planId) => {
+    if (!token) {
+      toast.error('Please login to purchase a plan');
+      navigate('/login');
+      return;
+    }
+
+    try {
+      setbuyingPlanId(planId);
+      const { data } = await axios.post(
+        '/api/credits/purchase',
+        { planId },
+        { headers: { Authorization: token } }
+      );
+
+      if (!data.success || !data.url) {
+        toast.error(data.message || 'Unable to start checkout');
+        return;
+      }
+
+      window.location.href = data.url;
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Unable to process payment now');
+    } finally {
+      setbuyingPlanId(null);
+    }
   }
 
   useEffect(() => {
@@ -17,15 +61,15 @@ const Credits = () => {
   if (loading) return <Loading />
   
   return (
-    <div className='w-full min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 py-12 px-4 sm:px-6 lg:px-8 dark:bg-gradient-to-br dark:from-gray-800 dark:via-gray-900 dark:to-black'>
+    <div className='w-full min-h-screen bg-linear-to-br from-indigo-50 via-purple-50 to-pink-50 py-12 px-4 sm:px-6 lg:px-8 dark:bg-linear-to-br dark:from-gray-800 dark:via-gray-900 dark:to-black'>
       {/* Header Section */}
       <div className='max-w-7xl mx-auto text-center mb-16'>
         <div className='inline-block mb-4'>
-          <span className='bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-semibold px-4 py-2 rounded-full shadow-lg'>
+          <span className='bg-linear-to-r from-purple-600 to-pink-600 text-white text-sm font-semibold px-4 py-2 rounded-full shadow-lg'>
             💎 Premium Plans
           </span>
         </div>
-        <h1 className='text-3xl sm:text-5xl font-bold mb-4 bg-clip-text text-transparent bg-gradient-to-r from-purple-600 via-pink-600 to-indigo-600'>
+        <h1 className='text-3xl sm:text-5xl font-bold mb-4 bg-clip-text text-transparent bg-linear-to-r from-purple-600 via-pink-600 to-indigo-600'>
           Choose Your Plan
         </h1>
         <p className='text-xl text-gray-600 max-w-2xl mx-auto'>
@@ -46,21 +90,21 @@ const Credits = () => {
           return (
             <div
               key={plan._id}
-              className={`relative bg-white rounded-2xl shadow-xl overflow-hidden transform transition-all duration-300 hover:scale-105 hover:shadow-2xl dark:bg-gradient-to-br dark:from-gray-800 dark:via-gray-900 dark:to-black ${
+              className={`relative bg-white rounded-2xl shadow-xl overflow-hidden transform transition-all duration-300 hover:scale-105 hover:shadow-2xl dark:bg-linear-to-br dark:from-gray-800 dark:via-gray-900 dark:to-black ${
                 isPopular ? 'ring-4 ring-purple-500 lg:scale-105' : ''
               }`}
             >
               {/* Popular Badge */}
               {isPopular && (
                 <div className='absolute top-0 right-0'>
-                  <div className='bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold px-4 py-2 rounded-bl-2xl shadow-lg'>
+                  <div className='bg-linear-to-r from-purple-600 to-pink-600 text-white text-xs font-bold px-4 py-2 rounded-bl-2xl shadow-lg'>
                     ⭐ MOST POPULAR
                   </div>
                 </div>
               )}
 
               {/* Card Header with Gradient */}
-              <div className={`bg-gradient-to-r ${gradients[index]} p-8 text-white`}>
+              <div className={`bg-linear-to-r ${gradients[index]} p-8 text-white`}>
                 <div className='flex items-center justify-between mb-4'>
                   <h2 className='text-3xl font-bold'>{plan.name}</h2>
                   <div className='bg-white/20 backdrop-blur-sm rounded-full p-3'>
@@ -104,18 +148,20 @@ const Credits = () => {
 
                 {/* CTA Button */}
                 <button
+                  onClick={() => purchasePlan(plan._id)}
+                  disabled={buyingPlanId === plan._id}
                   className={`w-full py-4 px-6 rounded-xl font-semibold text-lg transition-all duration-300 transform hover:scale-105 active:scale-95 ${
                     isPopular
-                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg hover:shadow-xl'
+                      ? 'bg-linear-to-r from-purple-600 to-pink-600 text-white shadow-lg hover:shadow-xl'
                       : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                  }`}
+                  } disabled:opacity-60 disabled:cursor-not-allowed`}
                 >
-                  {isPopular ? '🚀 Get Started Now' : 'Choose Plan'}
+                  {buyingPlanId === plan._id ? 'Redirecting...' : (isPopular ? 'Get Started Now' : 'Choose Plan')}
                 </button>
               </div>
 
               {/* Bottom Accent */}
-              <div className={`h-2 bg-gradient-to-r ${gradients[index]}`}></div>
+              <div className={`h-2 bg-linear-to-r ${gradients[index]}`}></div>
             </div>
           );
         })}

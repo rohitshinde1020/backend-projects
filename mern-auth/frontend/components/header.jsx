@@ -27,7 +27,7 @@ const Header = () => {
 
                 {/* Description */}
                 <p className='text-base md:text-lg text-gray-700 text-center max-w-2xl leading-relaxed px-4 animate-slide-up-delay'>
-                    Welcome to our <span className='font-semibold text-purple-600'>MERN authentication project</span>!
+                    Welcome to our <span className='font-semibold text-purple-600'>MERN stack authentication project</span>!
                     This project is designed to provide a secure and efficient authentication system using the
                     <span className='font-semibold'> MongoDB, Express, React, and Node.js</span> stack with modern best practices.
                 </p>

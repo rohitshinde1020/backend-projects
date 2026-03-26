@@ -5,7 +5,14 @@ import { useNavigate } from 'react-router-dom'
 import axios from 'axios';
 import toast  from 'react-hot-toast';
 
-axios.defaults.baseURL=import.meta.env.VITE_SERVER_URL;
+const serverUrl = import.meta.env.VITE_SERVER_URL;
+
+if (!serverUrl) {
+    console.error('Missing VITE_SERVER_URL. API requests will fail until it is set.');
+}
+
+axios.defaults.baseURL = serverUrl || '';
+axios.defaults.withCredentials = true;
 
 export const Appcontext=createContext();
 const Appcontextprovider = ({children}) => {
