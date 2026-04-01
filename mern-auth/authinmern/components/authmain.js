@@ -3,6 +3,11 @@ const { User } = require('../models/user.model');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const transporter = require('../config/nodemailer');
+const { getRedis } = require('../config/redis');
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_BLOCK_SECONDS = 15 * 60;
+const SESSION_TTL_SECONDS = 24 * 60 * 60;
+const crypto = require('crypto');
 
 const cookieOptions = {
     httpOnly: true,
@@ -36,11 +41,15 @@ const register = async (req, res) => {
 
         })
 
+        const redis = getRedis();
+        const sid = crypto.randomUUID();
         const token = jwt.sign(
-            { id: newuser._id },
+            { id: newuser._id, sid },
             process.env.JWT_SECRET,
             { expiresIn: '1d' },
         )
+
+        await redis.set('sess:' + sid, String(newuser._id), { EX: SESSION_TTL_SECONDS });
 
         res.cookie('token', token, cookieOptions)
 
@@ -70,43 +79,61 @@ const register = async (req, res) => {
 }
 
 const login = async (req, res) => {
-    console.log("Login route hit");
     const { password } = req.body;
     const email = req.body.email?.trim()?.toLowerCase();
+    const redis = getRedis();
 
     if (!email || !password) {
         return res.status(400).json({ success: false, message: "All fields are required" });
     }
 
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    const rlKey = 'rl:login:' + ip + ':' + email;
+    const attempts = Number(await redis.get(rlKey) || 0);
+    if (attempts >= MAX_LOGIN_ATTEMPTS) {
+        const ttl = await redis.ttl(rlKey);
+        return res.status(429).json({
+            success: false,
+            message: 'Too many failed attempts. Try again later.',
+            retryAfterSeconds: ttl > 0 ? ttl : LOGIN_BLOCK_SECONDS
+        });
+    }
+
     try {
         const user = await User.findOne({ email: email });
         if (!user) {
-            return res.status(201).json({ success: false, message: "Invalid email or password" });
+            const count = await redis.incr(rlKey);
+            if (count === 1) await redis.expire(rlKey, LOGIN_BLOCK_SECONDS);
+            return res.status(401).json({ success: false, message: 'Invalid email or password' });
         }
 
         const ismatch = await bcrypt.compare(password, user.password);
         if (!ismatch) {
-            return res.status(201).json({ success: false, message: "Invalid email or password" });
+            const count = await redis.incr(rlKey);
+            if (count === 1) await redis.expire(rlKey, LOGIN_BLOCK_SECONDS);
+            return res.status(401).json({ success: false, message: 'Invalid email or password' });
         }
+
+        await redis.del(rlKey);
+
+        const sid = crypto.randomUUID();
         const token = jwt.sign(
-            { id: user._id },
+            { id: user._id, sid },
             process.env.JWT_SECRET,
-            { expiresIn: '1d' },
-        )
+            { expiresIn: '1d' }
+        );
 
-        res.cookie('token', token, cookieOptions)
+        await redis.set('sess:' + sid, String(user._id), { EX: SESSION_TTL_SECONDS });
 
-        res.status(200).json({ success: true, message: "Login successful" });
-
+        res.cookie('token', token, cookieOptions);
+        return res.status(200).json({ success: true, message: 'Login successful' });
+    } catch (error) {
+        return res.status(500).json({ success: false, message: 'Login failed' });
     }
-    catch (error) {
-
-        res.status(500).json({ success: false, message: "Login failed" })
-    }
-}
+};
 
 
-const logout = async (req, res) => {
+/* const logout = async (req, res) => {
     try {
         res.clearCookie('token', {
             httpOnly: true,
@@ -118,7 +145,32 @@ const logout = async (req, res) => {
     catch (err) {
         res.status(201).json({ success: false, message: err.message })
     }
-}
+} */
+
+const logout = async (req, res) => {
+    try {
+        const token = req.cookies.token;
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                const redis = getRedis();
+                if (decoded.sid) {
+                    await redis.del('sess:' + decoded.sid);
+                }
+            } catch (_) { }
+        }
+
+        res.clearCookie('token', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        });
+
+        return res.status(200).json({ success: true, message: 'logout successfull' });
+    } catch (err) {
+        return res.status(500).json({ success: false, message: err.message });
+    }
+};
 
 const verify_otp_sent = async (req, res) => {
     try {
@@ -217,7 +269,7 @@ const resetpassword = async (req, res) => {
     }
     try {
         const user = await User.findOne({ email });
-        if(!user || user === null){
+        if (!user || user === null) {
             return res.status(400).json({ success: false, message: "User not found" });
         }
 
@@ -291,7 +343,7 @@ const verifyresetotp = async (req, res) => {
     }
 }
 
-const authmiddleware = (req, res, next) => {
+/* const authmiddleware = (req, res, next) => {
     const token = req.cookies.token;
     if (!token) {
         return res.status(401).json({ success: false, message: "Unauthorized access" });
@@ -306,15 +358,37 @@ const authmiddleware = (req, res, next) => {
         res.status(401).json({ success: false, message: "Unauthorized access" });
     }
 
-}
+} */
+
+const authmiddleware = async (req, res, next) => {
+    const token = req.cookies.token;
+    if (!token) {
+        return res.status(401).json({ success: false, message: 'Unauthorized access' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const redis = getRedis();
+        const storedUserId = await redis.get('sess:' + decoded.sid);
+
+        if (!storedUserId || storedUserId !== String(decoded.id)) {
+            return res.status(401).json({ success: false, message: 'Session expired or revoked' });
+        }
+
+        req.userId = decoded.id;
+        next();
+    } catch (err) {
+        return res.status(401).json({ success: false, message: 'Unauthorized access' });
+    }
+};
 
 const isauthenticated = (req, res) => {
-    try{
-         res.json({ success: true, message: "User is authenticated" });
+    try {
+        res.json({ success: true, message: "User is authenticated" });
     }
-   catch(err){  
+    catch (err) {
         res.status(500).json({ success: false, message: "Operation failed" });
-   }    
+    }
 }
 
 module.exports = { register, login, logout, verify_otp_sent, verifyemail, resetpassword, verifyresetotp, authmiddleware, isauthenticated };
