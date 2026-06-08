@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Appcontext, } from '../context/appcontext';
+import { Appcontext } from '../context/appcontext-context';
 import { useContext } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
@@ -63,9 +63,26 @@ const Navbar = () => {
                         </h1>
                     </div>
 
+                    <button
+                        type='button'
+                        className='md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full border border-gray-200 text-gray-700 hover:bg-gray-100 transition duration-200'
+                        onClick={() => setIsMenuOpen((value) => !value)}
+                        aria-label='Toggle menu'
+                    >
+                        {isMenuOpen ? (
+                            <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={2} stroke='currentColor' className='w-5 h-5'>
+                                <path strokeLinecap='round' strokeLinejoin='round' d='M6 18L18 6M6 6l12 12' />
+                            </svg>
+                        ) : (
+                            <svg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' strokeWidth={2} stroke='currentColor' className='w-5 h-5'>
+                                <path strokeLinecap='round' strokeLinejoin='round' d='M4 6h16M4 12h16M4 18h16' />
+                            </svg>
+                        )}
+                    </button>
+
                     {userdata ? (
                         <div className='w-10 h-10 flex justify-center items-center 
-                         bg-gradient-to-r from-purple-600 to-pink-600 
+                         bg-linear-to-r from-purple-600 to-pink-600 
                         rounded-full text-white cursor-pointer border-2 border-purple-600
                          relative group '
                         >
@@ -97,12 +114,25 @@ const Navbar = () => {
             {isMenuOpen && (
                 <div className='md:hidden bg-white/95 backdrop-blur-md border-t border-gray-200 animate-slide-down'>
                     <div className='px-4 py-4'>
-                        <button className='w-full px-6 py-3 bg-linear-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-full shadow-md hover:shadow-lg transform hover:scale-105 transition duration-300 flex items-center justify-center gap-2' onClick={() => navigate('/login')}>
-                            Login
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3" />
-                            </svg>
-                        </button>
+                        {userdata ? (
+                            <div className='flex flex-col gap-3'>
+                                {!userdata.isverify && (
+                                    <button className='w-full px-6 py-3 bg-gray-100 text-gray-800 font-semibold rounded-full shadow-sm hover:bg-gray-200 transition duration-200' onClick={sendverificationotp}>
+                                        Verify Account
+                                    </button>
+                                )}
+                                <button className='w-full px-6 py-3 bg-linear-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-full shadow-md hover:shadow-lg transition duration-300' onClick={logout}>
+                                    Logout
+                                </button>
+                            </div>
+                        ) : (
+                            <button className='w-full px-6 py-3 bg-linear-to-r from-purple-600 to-pink-600 text-white font-semibold rounded-full shadow-md hover:shadow-lg transform hover:scale-105 transition duration-300 flex items-center justify-center gap-2' onClick={() => navigate('/login')}>
+                                Login
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3" />
+                                </svg>
+                            </button>
+                        )}
                     </div>
                 </div>
             )}

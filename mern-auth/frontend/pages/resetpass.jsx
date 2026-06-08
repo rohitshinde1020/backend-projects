@@ -2,7 +2,7 @@ import React, { useContext, useState } from 'react'
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Appcontext } from '../context/appcontext';
+import { Appcontext } from '../context/appcontext-context';
 
 const Resetpass = () => {
   const navigate = useNavigate();

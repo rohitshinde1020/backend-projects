@@ -6,14 +6,67 @@ const transporter = require('../config/nodemailer');
 const { getRedis } = require('../config/redis');
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOGIN_BLOCK_SECONDS = 15 * 60;
-const SESSION_TTL_SECONDS = 24 * 60 * 60;
+const REFRESH_TTL_SECONDS = 7 * 24 * 60 * 60;
+const ACCESS_TOKEN_EXPIRES_IN = '15m';
+const REFRESH_TOKEN_EXPIRES_IN = '7d';
 const crypto = require('crypto');
 
-const cookieOptions = {
+const getCookieBaseOptions = () => ({
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-    maxAge: 24 * 60 * 60 * 1000,
+});
+
+const ACCESS_COOKIE_NAME = 'accessToken';
+const REFRESH_COOKIE_NAME = 'refreshToken';
+
+const generateAccessToken = (userId) => jwt.sign(
+    { id: String(userId), type: 'access' },
+    process.env.JWT_SECRET,
+    { expiresIn: ACCESS_TOKEN_EXPIRES_IN },
+);
+
+const generateRefreshToken = (userId, sid) => jwt.sign(
+    { id: String(userId), sid, type: 'refresh' },
+    process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET,
+    { expiresIn: REFRESH_TOKEN_EXPIRES_IN },
+);
+
+const setAuthCookies = (res, accessToken, refreshToken) => {
+    const baseOptions = getCookieBaseOptions();
+
+    res.cookie(ACCESS_COOKIE_NAME, accessToken, {
+        ...baseOptions,
+        maxAge: 15 * 60 * 1000,
+    });
+
+    // Keep legacy cookie name for backward compatibility with existing frontend calls.
+    res.cookie('token', accessToken, {
+        ...baseOptions,
+        maxAge: 15 * 60 * 1000,
+    });
+
+    res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
+        ...baseOptions,
+        maxAge: REFRESH_TTL_SECONDS * 1000,
+    });
+};
+
+const clearAuthCookies = (res) => {
+    const baseOptions = getCookieBaseOptions();
+    res.clearCookie(ACCESS_COOKIE_NAME, baseOptions);
+    res.clearCookie('token', baseOptions);
+    res.clearCookie(REFRESH_COOKIE_NAME, baseOptions);
+};
+
+const createAndStoreTokens = async (userId, redis) => {
+    const refreshSid = crypto.randomUUID();
+    const accessToken = generateAccessToken(userId);
+    const refreshToken = generateRefreshToken(userId, refreshSid);
+
+    await redis.set('refresh:' + refreshSid, String(userId), { EX: REFRESH_TTL_SECONDS });
+
+    return { accessToken, refreshToken };
 };
 
 const register = async (req, res) => {
@@ -42,16 +95,8 @@ const register = async (req, res) => {
         })
 
         const redis = getRedis();
-        const sid = crypto.randomUUID();
-        const token = jwt.sign(
-            { id: newuser._id, sid },
-            process.env.JWT_SECRET,
-            { expiresIn: '1d' },
-        )
-
-        await redis.set('sess:' + sid, String(newuser._id), { EX: SESSION_TTL_SECONDS });
-
-        res.cookie('token', token, cookieOptions)
+        const { accessToken, refreshToken } = await createAndStoreTokens(newuser._id, redis);
+        setAuthCookies(res, accessToken, refreshToken);
 
         const option = {
             from: process.env.SENDER,
@@ -116,55 +161,70 @@ const login = async (req, res) => {
 
         await redis.del(rlKey);
 
-        const sid = crypto.randomUUID();
-        const token = jwt.sign(
-            { id: user._id, sid },
-            process.env.JWT_SECRET,
-            { expiresIn: '1d' }
-        );
-
-        await redis.set('sess:' + sid, String(user._id), { EX: SESSION_TTL_SECONDS });
-
-        res.cookie('token', token, cookieOptions);
+        const { accessToken, refreshToken } = await createAndStoreTokens(user._id, redis);
+        setAuthCookies(res, accessToken, refreshToken);
         return res.status(200).json({ success: true, message: 'Login successful' });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Login failed' });
     }
 };
 
+const refreshaccesstoken = async (req, res) => {
+    const refreshToken = req.cookies[REFRESH_COOKIE_NAME];
+    if (!refreshToken) {
+        return res.status(401).json({ success: false, message: 'Refresh token is required' });
+    }
 
-/* const logout = async (req, res) => {
     try {
-        res.clearCookie('token', {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        })
-        res.status(200).json({ success: true, message: "logout successfull" })
+        const decoded = jwt.verify(
+            refreshToken,
+            process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET,
+        );
+
+        if (decoded.type !== 'refresh' || !decoded.sid || !decoded.id) {
+            return res.status(401).json({ success: false, message: 'Invalid refresh token' });
+        }
+
+        const redis = getRedis();
+        const storedUserId = await redis.get('refresh:' + decoded.sid);
+        if (!storedUserId || storedUserId !== String(decoded.id)) {
+            return res.status(401).json({ success: false, message: 'Refresh token expired or revoked' });
+        }
+
+        const accessToken = generateAccessToken(decoded.id);
+        const baseOptions = getCookieBaseOptions();
+        res.cookie(ACCESS_COOKIE_NAME, accessToken, {
+            ...baseOptions,
+            maxAge: 15 * 60 * 1000,
+        });
+        res.cookie('token', accessToken, {
+            ...baseOptions,
+            maxAge: 15 * 60 * 1000,
+        });
+
+        return res.status(200).json({ success: true, message: 'Access token refreshed' });
+    } catch (err) {
+        return res.status(401).json({ success: false, message: 'Invalid or expired refresh token' });
     }
-    catch (err) {
-        res.status(201).json({ success: false, message: err.message })
-    }
-} */
+};
 
 const logout = async (req, res) => {
     try {
-        const token = req.cookies.token;
-        if (token) {
+        const refreshToken = req.cookies[REFRESH_COOKIE_NAME];
+        if (refreshToken) {
             try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                const decoded = jwt.verify(
+                    refreshToken,
+                    process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET,
+                );
                 const redis = getRedis();
                 if (decoded.sid) {
-                    await redis.del('sess:' + decoded.sid);
+                    await redis.del('refresh:' + decoded.sid);
                 }
             } catch (_) { }
         }
 
-        res.clearCookie('token', {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        });
+        clearAuthCookies(res);
 
         return res.status(200).json({ success: true, message: 'logout successfull' });
     } catch (err) {
@@ -343,41 +403,29 @@ const verifyresetotp = async (req, res) => {
     }
 }
 
-/* const authmiddleware = (req, res, next) => {
-    const token = req.cookies.token;
-    if (!token) {
-        return res.status(401).json({ success: false, message: "Unauthorized access" });
-    }
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.userId = decoded.id;
-        next();
-
-    }
-    catch (err) {
-        res.status(401).json({ success: false, message: "Unauthorized access" });
-    }
-
-} */
-
 const authmiddleware = async (req, res, next) => {
-    const token = req.cookies.token;
+    const tokenFromCookie = req.cookies[ACCESS_COOKIE_NAME] || req.cookies.token;
+    const bearerToken = req.headers.authorization && req.headers.authorization.startsWith('Bearer ')
+        ? req.headers.authorization.split(' ')[1]
+        : null;
+    const token = tokenFromCookie || bearerToken;
+
     if (!token) {
         return res.status(401).json({ success: false, message: 'Unauthorized access' });
     }
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const redis = getRedis();
-        const storedUserId = await redis.get('sess:' + decoded.sid);
-
-        if (!storedUserId || storedUserId !== String(decoded.id)) {
-            return res.status(401).json({ success: false, message: 'Session expired or revoked' });
+        if (decoded.type && decoded.type !== 'access') {
+            return res.status(401).json({ success: false, message: 'Invalid access token' });
         }
 
         req.userId = decoded.id;
-        next();
+        return next();
     } catch (err) {
+        if (err.name === 'TokenExpiredError') {
+            return res.status(401).json({ success: false, message: 'Access token expired' });
+        }
         return res.status(401).json({ success: false, message: 'Unauthorized access' });
     }
 };
@@ -391,4 +439,15 @@ const isauthenticated = (req, res) => {
     }
 }
 
-module.exports = { register, login, logout, verify_otp_sent, verifyemail, resetpassword, verifyresetotp, authmiddleware, isauthenticated };
+module.exports = {
+    register,
+    login,
+    refreshaccesstoken,
+    logout,
+    verify_otp_sent,
+    verifyemail,
+    resetpassword,
+    verifyresetotp,
+    authmiddleware,
+    isauthenticated,
+};
