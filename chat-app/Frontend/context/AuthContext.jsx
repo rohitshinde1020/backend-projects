@@ -1,4 +1,4 @@
-import { createContext, useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
@@ -14,56 +14,82 @@ export const AuthProvider = ({ children }) => {
     const [authUser, setAuthUser] = useState(null);
     const [onlineUsers, setOnlineUsers] = useState([]);
     const [socket, setSocket] = useState(null);
+    const socketRef = useRef(null);
+    const connectErrorToastShown = useRef(false);
+
+    const disconnectSocket = useCallback(() => {
+        if (socketRef.current) {
+            socketRef.current.removeAllListeners();
+            socketRef.current.disconnect();
+            socketRef.current = null;
+        }
+        setSocket(null);
+        setOnlineUsers([]);
+    }, []);
 
     const connectSocket = useCallback((userData, authToken) => {
-        if(!userData || !authToken || socket?.connected) return;
+        if (!userData || !authToken) return;
+        if (socketRef.current?.connected) return;
+        if (socketRef.current && !socketRef.current.disconnected) return;
 
         const newSocket = io(backend_url, {
             auth: { token: authToken },
             transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: 5,
         });
 
+        socketRef.current = newSocket;
         setSocket(newSocket);
 
         newSocket.on('onlineUsers', (userIds) => {
             setOnlineUsers(userIds);
         });
 
-        newSocket.on('connect_error', () => {
-            toast.error('Realtime connection failed');
+        newSocket.on('connect', () => {
+            connectErrorToastShown.current = false;
         });
-    }, [socket]);
 
-    const checkAuth = useCallback(async () => {
+        newSocket.on('connect_error', (error) => {
+            console.error('Socket connect_error:', error.message);
+
+            if (!connectErrorToastShown.current) {
+                connectErrorToastShown.current = true;
+                toast.error('Realtime connection failed');
+            }
+        });
+    }, []);
+
+    const checkAuth = useCallback(async (authToken) => {
         try{
             const { data } = await axios.get('/api/users/check-auth');
             if(data.success){
                 setAuthUser(data.user);
-                connectSocket(data.user, token);
+                connectSocket(data.user, authToken);
             }
 
         }
         catch {
+            disconnectSocket();
             localStorage.removeItem('token');
             setToken(null);
             setAuthUser(null);
             delete axios.defaults.headers.common['token'];
             toast.error('Session expired. Please log in again.');
         }
-    }, [connectSocket, token]);
+    }, [connectSocket, disconnectSocket]);
     
     useEffect(() => {
         if(token){
             axios.defaults.headers.common['token'] = token;
-            const timer = setTimeout(() => {
-                void checkAuth();
-            }, 0);
-
-            return () => clearTimeout(timer);
+            void checkAuth(token);
         } else {
             delete axios.defaults.headers.common['token'];
+            disconnectSocket();
         }
-    }, [token, checkAuth]);
+    }, [token, checkAuth, disconnectSocket]);
+
+    useEffect(() => () => disconnectSocket(), [disconnectSocket]);
 
     const login = async (state,Credentials) => {
         try {
@@ -86,11 +112,7 @@ export const AuthProvider = ({ children }) => {
         setToken(null);
         localStorage.removeItem('token');
         delete axios.defaults.headers.common['token'];
-        setOnlineUsers([]);
-        if(socket){
-            socket.disconnect();
-            setSocket(null);
-        }
+        disconnectSocket();
         toast.success('Logged out successfully');
     };
 
