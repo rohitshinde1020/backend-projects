@@ -16,7 +16,7 @@ services:
     environment:
       MONGO_INITDB_DATABASE: setup_database
     volumes:
-      - mongo_data:/data/db
+      - mongo_data:/data/db 
 
 volumes:
   redis_data:
