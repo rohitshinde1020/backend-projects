@@ -11,11 +11,13 @@ const ACCESS_TOKEN_EXPIRES_IN = '15m';
 const REFRESH_TOKEN_EXPIRES_IN = '7d';
 const crypto = require('crypto');
 
+// Helper function to get cookie options based on environment 
 const getCookieBaseOptions = () => ({
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
 });
+
 
 const ACCESS_COOKIE_NAME = 'accessToken';
 const REFRESH_COOKIE_NAME = 'refreshToken';
@@ -26,31 +28,48 @@ const generateAccessToken = (userId) => jwt.sign(
     { expiresIn: ACCESS_TOKEN_EXPIRES_IN },
 );
 
+// what is sid? It is a unique identifier for the refresh token session.
+// It helps in managing and revoking refresh tokens individually.
+// from where did it came? It is generated using crypto.randomUUID() when creating a new refresh token session.
 const generateRefreshToken = (userId, sid) => jwt.sign(
     { id: String(userId), sid, type: 'refresh' },
     process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET,
     { expiresIn: REFRESH_TOKEN_EXPIRES_IN },
 );
 
+// Function to set authentication cookies, including both access and refresh tokens, in the response.
 const setAuthCookies = (res, accessToken, refreshToken) => {
+    
     const baseOptions = getCookieBaseOptions();
 
+    // Set the access token cookie with a 15-minute expiration time.
     res.cookie(ACCESS_COOKIE_NAME, accessToken, {
         ...baseOptions,
         maxAge: 15 * 60 * 1000,
     });
 
-    // Keep legacy cookie name for backward compatibility with existing frontend calls.
+    // Set the access token cookie with a 15-minute expiration time (duplicate for compatibility).
+    // what is the need of this duplicate cookie? It might be for compatibility with different client implementations that expect the access token under the name 'token'.
     res.cookie('token', accessToken, {
         ...baseOptions,
         maxAge: 15 * 60 * 1000,
     });
-
+    
+    
     res.cookie(REFRESH_COOKIE_NAME, refreshToken, {
         ...baseOptions,
         maxAge: REFRESH_TTL_SECONDS * 1000,
     });
 };
+
+// how the access token is generated using refresh token? The access token is generated using the user ID extracted from the refresh token. 
+// When a valid refresh token is presented, the server verifies it and retrieves the user ID, which is then used to create a new access token with a short expiration time (15 minutes). 
+// This allows the user to continue accessing protected resources without needing to log in again, as long as the refresh token remains valid.
+
+
+// why we need access token if we have refresh token? The access token is used for authenticating API requests and has a short lifespan (15 minutes) to minimize security risks. 
+// The refresh token, which has a longer lifespan (7 days), is used to obtain new access tokens without requiring the user to log in again. 
+// This separation enhances security by limiting the exposure of the access token while still allowing for a seamless user experience through the use of refresh tokens.
 
 const clearAuthCookies = (res) => {
     const baseOptions = getCookieBaseOptions();
@@ -169,6 +188,13 @@ const login = async (req, res) => {
     }
 };
 
+// what these refreshaccesstoken const do? The `refreshaccesstoken` function is responsible for handling the process of refreshing an access token using a valid refresh token. Here's a breakdown of what it does:
+// 1. It retrieves the refresh token from the request cookies.
+// 2. It verifies the refresh token using JWT and checks its validity, including its type and associated session ID (sid).
+// 3. It checks if the refresh token is still valid by looking it up in Redis, ensuring that it hasn't expired or been revoked.
+// 4. If the refresh token is valid, it generates a new access token for the user.
+// 5. It sets the new access token in the response cookies, allowing the user to continue making authenticated requests without needing to log in again.
+// 6. If any checks fail (e.g., invalid or expired refresh token), it responds with an appropriate error message and status code.
 const refreshaccesstoken = async (req, res) => {
     const refreshToken = req.cookies[REFRESH_COOKIE_NAME];
     if (!refreshToken) {
