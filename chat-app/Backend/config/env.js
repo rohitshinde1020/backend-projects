@@ -15,6 +15,7 @@ function getAllowedOrigins() {
 }
 
 function validateEnv() {
+  // Check for missing environment variables and log an error if any are missing, then exit the process to prevent the application from running with incomplete configuration.
   const missing = requiredEnvVars.filter((key) => !process.env[key]);
 
   if (missing.length > 0) {

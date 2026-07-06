@@ -3,6 +3,9 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/UserModel');
 
+
+// Middleware to protect routes by verifying JWT tokens
+// This middleware checks for a token in the request headers, verifies it, and attaches the user information to the request object if valid.
 const protectroute = async (req, res, next) => {
     try {
         const token = req.headers.token;

@@ -13,6 +13,8 @@ const getAllUsers = async (req, res) => {
         const filteredUsers = await User.find({ _id: { $ne: userId } }).select('-password');
 
         const unseenmsg = {}
+        // For each of the filtered users, we check for any unseen messages sent by that user to the logged-in user. 
+        // We use Promise.all to handle multiple asynchronous operations concurrently, allowing us to efficiently gather the count of unseen messages for each user and store it in the unseenmsg object.
         const promises = filteredUsers.map(async (user) => {
             const messages = await Message.find({ senderId: user._id, receiverId: userId, seen: false });
             if (messages.length > 0) {
@@ -55,6 +57,8 @@ const markMessagesAsSeen = async (req, res) => {
     try {
         const {id} = req.params;
 
+        // Mark the message with the specified ID as seen by updating its 'seen' field to true in the database.
+        // This allows us to track which messages have been viewed by the recipient and update the message status accordingly.
         await Message.findByIdAndUpdate(id,{seen:true  });
         res.status(200).json({ success: true, message: 'Messages marked as seen' });
     } catch (error) {
@@ -75,6 +79,7 @@ const sendMessage = async (req, res) => {
         }
 
         let imageUrl = '';
+        // If an image is included in the request, we upload it to Cloudinary and retrieve the secure URL to store in the message document. This allows us to handle image attachments in messages and provide a way to access the uploaded images securely.
         if(image){
             const uploadResult = await cloudinary.uploader.upload(image);
             imageUrl = uploadResult.secure_url;
@@ -88,6 +93,8 @@ const sendMessage = async (req, res) => {
 
         await newMessage.save();
 
+        // After saving the new message to the database, we emit a 'newMessage' event to the receiver's socket using Socket.IO. 
+        // This allows us to notify the recipient in real-time about the new message they have received, enabling a seamless and interactive messaging experience.
         const io = socketHelper.getIO();
         const receiverSocketId = socketHelper.usersocketMap[receiverId];
         if (io && receiverSocketId) {
