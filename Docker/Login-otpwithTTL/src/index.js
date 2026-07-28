@@ -30,6 +30,7 @@ app.post('/verify', async(req, res) => {
     }
 });
 
+// Endpoint to check the TTL of the OTP for a given phone number it is still validv
 app.get('/otp/:phone/ttl', async(req, res) => {
     const { phone } = req.params;
     const ttl = await redisclient.ttl(getkey(phone));
